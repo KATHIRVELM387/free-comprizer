@@ -1,0 +1,184 @@
+import { fitDimensions, formatBytes, prepareImage } from './image-tools.js';
+
+const $ = id => document.getElementById(id);
+const fileInput = $('file-input');
+let source = null;
+let originalFile = null;
+let originalURL = null;
+let resultURL = null;
+let generation = 0;
+let busy = false;
+
+function setStatus(message, error = false) {
+  $('status').textContent = message;
+  $('status').classList.toggle('error', error);
+  $('status').hidden = !message;
+}
+
+function clearResult() {
+  $('result').hidden = true;
+  $('download').removeAttribute('href');
+  $('result-image').removeAttribute('src');
+  if (resultURL) URL.revokeObjectURL(resultURL);
+  resultURL = null;
+}
+
+function updatePresets() {
+  document.querySelectorAll('[data-size]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.size === $('target').value)));
+}
+
+async function decodeImage(file) {
+  if ('createImageBitmap' in window) return createImageBitmap(file);
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  try { img.src = url; await img.decode(); return img; }
+  finally { URL.revokeObjectURL(url); }
+}
+
+async function loadFile(file) {
+  if (!file || busy) return;
+  const current = ++generation;
+  setStatus('Opening your photo…');
+  let decoded;
+  try {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Please choose a JPG, PNG, or WebP image.');
+    if (file.size > 25_000_000) throw new Error('This photo is larger than 25 MB. Please choose a smaller file.');
+    decoded = await decodeImage(file);
+    if (current !== generation) { decoded.close?.(); return; }
+    const width = decoded.naturalWidth || decoded.width;
+    const height = decoded.naturalHeight || decoded.height;
+    if (!width || !height || width * height > 40_000_000) throw new Error('Please choose a photo with no more than 40 million pixels.');
+    clearResult();
+    source?.close?.();
+    source = decoded;
+    originalFile = file;
+    if (originalURL) URL.revokeObjectURL(originalURL);
+    originalURL = URL.createObjectURL(file);
+    $('original-image').src = originalURL;
+    $('original-name').textContent = file.name;
+    $('original-details').textContent = `${width.toLocaleString()} × ${height.toLocaleString()} px · ${formatBytes(file.size)}`;
+    const fitted = fitDimensions(width, height);
+    $('width').value = fitted.width;
+    $('height').value = fitted.height;
+    $('dropzone').hidden = true;
+    $('original-card').hidden = false;
+    $('replace').hidden = false;
+    $('demo-line').hidden = true;
+    $('settings').disabled = false;
+    document.querySelector('.settings-footnote').textContent = 'Your original photo stays unchanged.';
+    setStatus(fitted.width !== width || fitted.height !== height ? 'Large photo detected. Output dimensions were reduced to fit browser processing limits.' : 'Photo loaded. Set your requirements, then prepare your photo.');
+  } catch (error) {
+    if (decoded && decoded !== source) decoded.close?.();
+    if (current === generation) setStatus(error.message.includes('decode') || error.name === 'InvalidStateError' ? 'This file could not be opened. Please choose a valid JPG, PNG, or WebP image.' : error.message, true);
+  } finally { fileInput.value = ''; }
+}
+
+$('browse').addEventListener('click', () => fileInput.click());
+$('replace').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => loadFile(fileInput.files[0]));
+const photoPanel = document.querySelector('.photo-panel');
+photoPanel.addEventListener('dragover', event => { event.preventDefault(); $('dropzone').classList.add('drag-over'); });
+photoPanel.addEventListener('dragleave', event => { if (!photoPanel.contains(event.relatedTarget)) $('dropzone').classList.remove('drag-over'); });
+photoPanel.addEventListener('drop', event => {
+  event.preventDefault();
+  $('dropzone').classList.remove('drag-over');
+  if (event.dataTransfer.files.length !== 1) { setStatus('Please choose one photo at a time.', true); return; }
+  loadFile(event.dataTransfer.files[0]);
+});
+window.addEventListener('dragover', event => event.preventDefault());
+window.addEventListener('drop', event => event.preventDefault());
+
+document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => {
+  $('target').value = button.dataset.size;
+  $('target').dispatchEvent(new Event('input', { bubbles: true }));
+}));
+
+function syncDimension(changed) {
+  if (!$('lock').checked || !source) return;
+  const ratio = (source.naturalWidth || source.width) / (source.naturalHeight || source.height);
+  const value = Number($(changed).value);
+  if (!value || value < 1) return;
+  $(changed === 'width' ? 'height' : 'width').value = Math.max(1, Math.round(changed === 'width' ? value / ratio : value * ratio));
+}
+$('width').addEventListener('input', () => syncDimension('width'));
+$('height').addEventListener('input', () => syncDimension('height'));
+$('lock').addEventListener('change', () => { syncDimension('width'); clearResult(); });
+$('settings-form').addEventListener('input', () => {
+  clearResult();
+  updatePresets();
+  $('format-help').textContent = $('format').value === 'image/jpeg' ? 'Transparent areas become white in JPG.' : $('format').value === 'image/png' ? 'PNG is lossless. Smaller dimensions may be needed to meet your limit.' : 'WebP keeps transparency. Check that your form accepts it.';
+  setStatus('Settings changed. Prepare your photo to see the updated result.');
+});
+
+$('settings-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!source || busy) return;
+  busy = true;
+  const current = ++generation;
+  const requestedWidth = Number($('width').value);
+  const requestedHeight = Number($('height').value);
+  const target = $('target').value === '' ? null : Number($('target').value) * 1000;
+  const type = $('format').value;
+  clearResult();
+  $('settings').disabled = true;
+  $('replace').disabled = true;
+  $('process').textContent = 'Preparing your photo…';
+  $('settings-form').setAttribute('aria-busy', 'true');
+  setStatus('Preparing your photo on your device…');
+  try {
+    const result = await prepareImage(source, { width: requestedWidth, height: requestedHeight, target, type, allowResize: $('auto-resize').checked });
+    if (current !== generation) return;
+    resultURL = URL.createObjectURL(result.blob);
+    $('result-image').src = resultURL;
+    $('download').href = resultURL;
+    const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[type];
+    $('download').download = `${originalFile.name.replace(/\.[^.]+$/, '') || 'photo'}-ready.${extension}`;
+    const savings = Math.round((1 - result.blob.size / originalFile.size) * 100);
+    $('result-heading').textContent = result.meetsTarget ? 'Ready for the next step.' : 'This needs a little more room.';
+    $('result-summary').textContent = `${formatBytes(result.blob.size)} · ${result.width.toLocaleString()} × ${result.height.toLocaleString()} px · ${extension.toUpperCase()}${savings > 0 ? ` · ${savings}% smaller` : ''}`;
+    const checks = $('result-checks');
+    checks.replaceChildren();
+    const sizeCheck = document.createElement('span');
+    sizeCheck.textContent = !target ? '✓ No file-size limit set' : result.meetsTarget ? `✓ Within ${target / 1000} KB` : `Above ${target / 1000} KB limit`;
+    sizeCheck.classList.toggle('warning', !result.meetsTarget);
+    const dimensionCheck = document.createElement('span');
+    const changed = result.width !== requestedWidth || result.height !== requestedHeight;
+    dimensionCheck.textContent = changed ? 'Dimensions reduced to fit' : '✓ Dimensions match';
+    dimensionCheck.classList.toggle('warning', changed);
+    checks.append(sizeCheck, dimensionCheck);
+    $('result-warning').hidden = result.meetsTarget && !changed;
+    $('result-warning').textContent = !result.meetsTarget ? 'The result exceeds your limit. Try JPG or WebP, allow smaller dimensions, or increase the file-size limit.' : 'The dimensions were reduced with your permission. Confirm that the new dimensions meet your form’s requirements.';
+    $('download').firstChild.textContent = result.meetsTarget ? 'Download photo ' : 'Download anyway ';
+    $('result').hidden = false;
+    setStatus(result.meetsTarget ? 'Your photo is ready. Review the preview and download it below.' : 'Photo prepared, but the file-size limit could not be met.', !result.meetsTarget);
+  } catch (error) { setStatus(error.message || 'Something went wrong. Try a smaller image.', true); }
+  finally {
+    busy = false;
+    $('settings').disabled = !source;
+    $('replace').disabled = false;
+    $('process').textContent = 'Prepare my photo →';
+    $('settings-form').removeAttribute('aria-busy');
+  }
+});
+
+$('demo').addEventListener('click', async () => {
+  $('demo').disabled = true;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1600; canvas.height = 1100;
+    const ctx = canvas.getContext('2d');
+    const sky = ctx.createLinearGradient(0, 0, 0, 1100);
+    sky.addColorStop(0, '#c9ded6'); sky.addColorStop(1, '#f8e9cd');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, 1600, 1100);
+    ctx.fillStyle = '#f7d78d'; ctx.beginPath(); ctx.arc(1160, 280, 115, 0, Math.PI * 2); ctx.fill();
+    for (const [color, points] of [['#8fa999', [0,650,420,230,930,790,1290,470,1600,730]], ['#537e6e', [0,850,650,430,1200,910,1600,630]], ['#285947', [0,890,470,720,1010,1040,1600,810]]]) {
+      ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(points[0], points[1]);
+      for (let i = 2; i < points.length; i += 2) ctx.lineTo(points[i], points[i + 1]);
+      ctx.lineTo(1600, 1100); ctx.lineTo(0, 1100); ctx.closePath(); ctx.fill();
+    }
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('Unable to create a sample. Please choose a photo.');
+    await loadFile(new File([blob], 'a-little-escape.png', { type: 'image/png' }));
+  } catch (error) { setStatus(error.message, true); }
+  finally { $('demo').disabled = false; }
+});

@@ -1,0 +1,176 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import { readFile, writeFile, mkdir, mkdtemp, rm, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const artifacts = join(root, 'test-artifacts');
+await mkdir(artifacts, { recursive: true });
+const profile = await mkdtemp(join(tmpdir(), 'ready-to-upload-browser-'));
+const downloads = join(profile, 'downloads');
+await mkdir(downloads);
+const csp = (await readFile(join(root, 'public/_headers'), 'utf8')).split('\n').find(line => line.includes('Content-Security-Policy:')).split('Content-Security-Policy: ')[1];
+const server = createServer(async (req, res) => {
+  try {
+    const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    const file = resolve(root, 'public', `.${pathname === '/' ? '/index.html' : pathname}`);
+    if (!file.startsWith(join(root, 'public') + '/')) { res.writeHead(403).end(); return; }
+    const data = await readFile(file);
+    res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml' })[extname(file)] || 'application/octet-stream', 'Content-Security-Policy': csp });
+    res.end(data);
+  } catch { res.writeHead(404).end(); }
+});
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const port = server.address().port;
+const browser = spawn(process.env.CHROME_BIN || '/usr/bin/google-chrome', ['--headless=new', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check', '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+let log = '';
+browser.stderr.on('data', data => { log += data; });
+let sequence = 0;
+let buffer = '';
+const pending = new Map();
+const errors = [];
+const externalRequests = [];
+browser.stdio[4].on('data', data => {
+  buffer += data.toString();
+  let end;
+  while ((end = buffer.indexOf('\0')) >= 0) {
+    const message = JSON.parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1);
+    if (message.id && pending.has(message.id)) {
+      const { resolve, reject, timer } = pending.get(message.id); clearTimeout(timer); pending.delete(message.id);
+      if (message.error) reject(new Error(JSON.stringify(message.error))); else resolve(message.result);
+    }
+    if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.text);
+    if (message.method === 'Network.requestWillBeSent') {
+      const url = message.params.request.url;
+      if (!url.startsWith(`http://127.0.0.1:${port}`) && !url.startsWith('blob:') && !url.startsWith('data:')) externalRequests.push(url);
+    }
+  }
+});
+function cdp(method, params = {}, sessionId) {
+  return new Promise((resolve, reject) => {
+    const id = ++sequence;
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Timeout: ${method}\n${log.slice(-2000)}`)); }, 30000);
+    pending.set(id, { resolve, reject, timer });
+    browser.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
+  });
+}
+let session;
+async function evaluate(expression) {
+  const response = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true }, session);
+  if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
+  return response.result.value;
+}
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(expression) {
+  const start = Date.now();
+  while (Date.now() - start < 20000) { if (await evaluate(expression)) return; await delay(50); }
+  throw new Error(`Condition not met: ${expression}`);
+}
+async function screenshot(name) {
+  const { data } = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, session);
+  await writeFile(join(artifacts, name), Buffer.from(data, 'base64'));
+}
+function pass(message) { console.log(`PASS ${message}`); }
+
+try {
+  const { targetId } = await cdp('Target.createTarget', { url: 'about:blank' });
+  ({ sessionId: session } = await cdp('Target.attachToTarget', { targetId, flatten: true }));
+  await cdp('Page.enable', {}, session);
+  await cdp('Runtime.enable', {}, session);
+  await cdp('Network.enable', {}, session);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false }, session);
+  await cdp('Page.navigate', { url: `http://127.0.0.1:${port}` }, session);
+  await until("document.readyState === 'complete' && !!document.getElementById('demo')");
+  assert.equal(await evaluate("document.getElementById('settings').disabled"), true);
+  await screenshot('desktop.png');
+  pass('Initial screen and disabled controls');
+
+  await evaluate("document.getElementById('demo').click()");
+  await until("!document.getElementById('settings').disabled");
+  assert.equal(await evaluate("document.getElementById('width').value"), '1600');
+  assert.equal(await evaluate("document.getElementById('height').value"), '1100');
+  await evaluate("document.getElementById('width').value = '800'; document.getElementById('width').dispatchEvent(new Event('input', {bubbles:true}))");
+  assert.equal(await evaluate("document.getElementById('height').value"), '550');
+  await evaluate("document.getElementById('settings-form').requestSubmit()");
+  await until("!document.getElementById('result').hidden && !document.getElementById('settings').disabled");
+  assert.match(await evaluate("document.getElementById('result-checks').textContent"), /Within 100 KB/);
+  await until("document.getElementById('result-image').naturalWidth === 800");
+  pass('Sample image, aspect ratio, target-size compression, and preview');
+
+  await cdp('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+  await evaluate("document.getElementById('download').click()");
+  let files = [];
+  for (let i = 0; i < 100; i++) { files = await readdir(downloads); if (files.some(name => name.endsWith('.jpg'))) break; await delay(50); }
+  const filename = files.find(name => name.endsWith('.jpg'));
+  assert.equal(filename, 'a-little-escape-ready.jpg');
+  const bytes = await readFile(join(downloads, filename));
+  assert.equal(bytes[0], 0xff); assert.equal(bytes[1], 0xd8); assert.ok(bytes.length <= 100000);
+  pass('Actual JPG download and byte-size limit');
+  await screenshot('desktop-result.png');
+
+  for (const width of [768, 390, 320]) {
+    await cdp('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true }, session);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `Horizontal overflow at ${width}px`);
+    if (width === 390) await screenshot('mobile-result.png');
+  }
+  pass('Responsive layouts at 320, 390 and 768 pixels');
+
+  const core = await evaluate(`(async () => {
+    const { prepareImage } = await import('./image-tools.js');
+    const canvas = document.createElement('canvas'); canvas.width = 1000; canvas.height = 800;
+    const ctx = canvas.getContext('2d'); const pixels = ctx.createImageData(1000,800);
+    let seed = 42; for(let i=0;i<pixels.data.length;i+=4){seed=(seed*1664525+1013904223)>>>0; pixels.data[i]=seed&255; pixels.data[i+1]=(seed>>>8)&255; pixels.data[i+2]=(seed>>>16)&255; pixels.data[i+3]=255;} ctx.putImageData(pixels,0,0);
+    const options = {width:1000,height:800,type:'image/jpeg',target:100000,allowResize:false};
+    const jpg = await prepareImage(canvas,options);
+    const png = await prepareImage(canvas,{...options,type:'image/png',target:1000});
+    const smaller = await prepareImage(canvas,{...options,target:1000,allowResize:true});
+    const webp = await prepareImage(canvas,{...options,type:'image/webp',target:50000,allowResize:true});
+    const noLimit = await prepareImage(canvas,{...options,target:null});
+    let invalid = false; try {await prepareImage(canvas,{...options,width:4096,height:4096})} catch {invalid=true}
+    const transparent = document.createElement('canvas'); transparent.width=10; transparent.height=10;
+    const white = await prepareImage(transparent,{...options,width:10,height:10,target:null});
+    const alpha = await prepareImage(transparent,{...options,width:10,height:10,type:'image/png',target:null});
+    const inspect = async blob => {const image=await createImageBitmap(blob); const c=document.createElement('canvas'); c.width=c.height=10; const x=c.getContext('2d'); x.drawImage(image,0,0); const value=Array.from(x.getImageData(0,0,1,1).data); image.close(); return value};
+    const blob = await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+    const transfer = new DataTransfer(); transfer.items.add(new File([blob],'<img onerror=alert(1)>.png',{type:'image/png'})); document.getElementById('file-input').files=transfer.files; document.getElementById('file-input').dispatchEvent(new Event('change'));
+    return {jpg:{size:jpg.blob.size,width:jpg.width,meets:jpg.meetsTarget},png:{size:png.blob.size,meets:png.meetsTarget},smaller:{size:smaller.blob.size,width:smaller.width,meets:smaller.meetsTarget},webp:{size:webp.blob.size,type:webp.blob.type,meets:webp.meetsTarget},noLimit:noLimit.meetsTarget,invalid,white:await inspect(white.blob),alpha:await inspect(alpha.blob)};
+  })()`);
+  assert.ok(core.jpg.size <= 100000 && core.jpg.meets); assert.equal(core.jpg.width, 1000);
+  assert.ok(core.png.size > 1000 && !core.png.meets);
+  assert.ok(core.smaller.size <= 1000 && core.smaller.meets && core.smaller.width < 1000);
+  assert.ok(core.webp.size <= 50000 && core.webp.meets); assert.equal(core.webp.type, 'image/webp');
+  assert.ok(core.noLimit && core.invalid);
+  assert.deepEqual(core.white, [255,255,255,255]); assert.equal(core.alpha[3], 0);
+  pass('Real encoders: noisy images, unreachable PNG size, optional resizing, WebP, transparency, and bounds');
+
+  await until("document.getElementById('original-name').textContent === '<img onerror=alert(1)>.png'");
+  assert.equal(await evaluate("document.getElementById('original-name').children.length"), 0);
+  await evaluate("document.getElementById('target').value='1'; document.getElementById('format').value='image/png'; document.getElementById('format').dispatchEvent(new Event('input',{bubbles:true})); document.getElementById('settings-form').requestSubmit()");
+  await until("!document.getElementById('result').hidden && !document.getElementById('settings').disabled");
+  assert.match(await evaluate("document.getElementById('result-checks').textContent"), /Above 1 KB/);
+  assert.match(await evaluate("document.getElementById('download').textContent"), /Download anyway/);
+  assert.equal(await evaluate("document.getElementById('result-warning').hidden"), false);
+  await evaluate("document.querySelector('[data-size=\"200\"]').click()");
+  assert.equal(await evaluate("document.getElementById('result').hidden"), true);
+  assert.equal(await evaluate("document.getElementById('download').hasAttribute('href')"), false);
+  pass('Unsafe filenames remain text, failure is explicit, and edited settings invalidate the download');
+
+  for (const [name, type, content, expected] of [['bad.txt','text/plain','hello','Please choose a JPG'],['broken.jpg','image/jpeg','not an image','could not be opened']]) {
+    await evaluate(`{ const dt=new DataTransfer(); dt.items.add(new File([${JSON.stringify(content)}],${JSON.stringify(name)},{type:${JSON.stringify(type)}})); const input=document.getElementById('file-input'); input.files=dt.files; input.dispatchEvent(new Event('change')); }`);
+    await until(`document.getElementById('status').textContent.includes(${JSON.stringify(expected)})`);
+    assert.equal(await evaluate("document.getElementById('settings').disabled"), false);
+  }
+  pass('Unsupported and corrupt files show errors without losing the current photo');
+  assert.deepEqual(errors, []); assert.deepEqual(externalRequests, []);
+  pass('No uncaught browser errors or external network requests');
+  console.log('All browser integration checks passed.');
+} finally {
+  browser.kill('SIGTERM');
+  await new Promise(resolve => server.close(resolve));
+  await delay(500);
+  for (const entry of pending.values()) clearTimeout(entry.timer);
+  await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+}
