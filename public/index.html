@@ -3,83 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
-  <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Free Comprizer helps you compress images to 50 KB, 100 KB or 200 KB and resize JPG, PNG and WebP photos online. Free, private and no signup required.">
-  <meta name="robots" content="index, follow, max-image-preview:large">
-  <meta name="theme-color" content="#6935ce">
-  <title>Free Comprizer — Free Image Compressor &amp; Photo Resizer</title>
-  <link rel="canonical" href="https://kathirvelm387.github.io/free-comprizer/">
-  <link rel="sitemap" type="application/xml" href="sitemap.xml">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Free Comprizer">
-  <meta property="og:title" content="Free Comprizer — Free Image Compressor &amp; Photo Resizer">
-  <meta property="og:description" content="Make photos fit your online forms. Compress and resize JPG, PNG and WebP images on your device, with no signup or file uploads.">
-  <meta property="og:url" content="https://kathirvelm387.github.io/free-comprizer/">
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Free Comprizer — Free Image Compressor &amp; Photo Resizer">
-  <meta name="twitter:description" content="Compress and resize photos for free. Your images stay on your device.">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <meta http-equiv="refresh" content="0; url=https://kathirvelm387.github.io/i-love-free-compressor/">
+  <link rel="canonical" href="https://kathirvelm387.github.io/i-love-free-compressor/">
+  <meta name="description" content="Our free photo tool is now I Love Free Compressor. Visit the new website to compress and resize your images.">
+  <title>We’ve moved — I Love Free Compressor</title>
   <link rel="stylesheet" href="styles.css">
-  <script type="module" src="app.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#tool">Skip to photo tool</a>
-  <header class="site-header wrap">
-    <a class="brand" href="./" aria-label="Free Comprizer home"><span class="brand-icon" aria-hidden="true">↥</span>Free&nbsp;<span>Comprizer</span></a>
-    <nav aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="#questions">FAQs</a><span class="free-badge">100% free</span></nav>
-  </header>
-  <main>
-    <section class="hero wrap">
-      <span class="eyebrow"><span class="status-dot"></span> LESS FILE FUSS. MORE GETTING THINGS DONE.</span>
-      <h1>Free image compressor.<br><em>Photos that fit.</em></h1>
-      <p>Free Comprizer resizes and compresses JPG, PNG and WebP photos<br class="desktop-break"> for online forms. Free, simple, and just between you and your browser.</p>
-      <div class="hero-notes"><span>✓ No sign-up</span><span>✓ No uploads to a server</span><span>✓ No watermarks</span></div>
-    </section>
-
-    <section class="workspace wrap" id="tool" aria-label="Photo resizing and compression tool">
-      <div class="workspace-heading"><div><span class="tiny-label">THE EVERYDAY PHOTO TOOL</span><h2>A smaller file. A smoother application.</h2></div><span class="local-badge"><span aria-hidden="true">◈</span> Stays on your device</span></div>
-      <div class="editor-grid">
-        <div class="photo-panel">
-          <div class="step-heading"><span class="step">1</span><h3>Add your photo</h3><button id="replace" class="text-button" hidden>Change photo</button></div>
-          <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
-          <div id="dropzone" class="dropzone">
-            <div class="upload-illustration" aria-hidden="true"><svg viewBox="0 0 100 90" fill="none"><rect x="14" y="13" width="64" height="62" rx="9" fill="#facbbd" transform="rotate(-10 14 13)"/><rect x="25" y="12" width="62" height="63" rx="9" fill="#fff" stroke="#ab85d4" stroke-width="1.5"/><circle cx="44" cy="31" r="6" fill="#ffbf47"/><path d="m30 65 19-22 12 13 9-9 12 18" fill="#64bda7"/><rect x="65" y="57" width="30" height="30" rx="15" fill="#733ddd"/><path d="M80 78V65m-5 5 5-5 5 5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <h3>Drop your photo here</h3><p>or choose one from your device</p>
-            <button type="button" class="button primary" id="browse">Choose a photo <span aria-hidden="true">↗</span></button>
-            <span class="file-hint">JPG, PNG or WebP · up to 25 MB</span>
-          </div>
-          <div id="original-card" class="preview-card" hidden><div class="preview-image"><img id="original-image" alt="Your original photo"></div><div class="image-caption"><span id="original-name"></span><span class="pill">Original</span></div><p id="original-details" class="image-details"></p></div>
-          <p class="demo-line" id="demo-line">Just looking around? <button id="demo" class="text-button">Try a sample photo</button></p>
-          <div class="privacy-note"><span aria-hidden="true">⌁</span><p><strong>Your photos are yours.</strong> They’re processed right here in your browser and never sent to us.</p></div>
-        </div>
-
-        <form id="settings-form" class="settings-panel">
-          <div class="step-heading"><span class="step">2</span><h3>Make it fit</h3></div>
-          <fieldset id="settings" disabled>
-            <label for="target">Maximum file size <span class="optional">optional</span></label>
-            <div class="input-unit"><input id="target" type="number" min="1" max="25000" step="1" value="100" placeholder="No limit"><span>KB</span></div>
-            <div class="presets" aria-label="File size presets"><button type="button" data-size="50" aria-pressed="false">50 KB</button><button type="button" data-size="100" aria-pressed="true">100 KB</button><button type="button" data-size="200" aria-pressed="false">200 KB</button><button type="button" data-size="500" aria-pressed="false">500 KB</button></div>
-            <div class="field-heading"><span>Dimensions <span class="optional">pixels</span></span><label class="checkbox-label" for="lock"><input id="lock" type="checkbox" checked> Keep ratio</label></div>
-            <div class="dimension-row"><div><label for="width" class="small-label">Width</label><input id="width" type="number" min="1" max="4096" step="1" required></div><span aria-hidden="true">×</span><div><label for="height" class="small-label">Height</label><input id="height" type="number" min="1" max="4096" step="1" required></div></div>
-            <label for="format">Save as</label><select id="format"><option value="image/jpeg">JPG — great for photos</option><option value="image/webp">WebP — smaller modern images</option><option value="image/png">PNG — lossless, supports transparency</option></select>
-            <p class="field-help" id="format-help">Transparent areas become white in JPG.</p>
-            <label class="checkbox-label resize-option" for="auto-resize"><input id="auto-resize" type="checkbox"> Allow smaller dimensions to meet the size limit</label>
-            <button type="submit" id="process" class="button primary process-button">Prepare my photo <span aria-hidden="true">→</span></button>
-            <p class="settings-footnote">Choose a photo to get started.</p>
-          </fieldset>
-        </form>
-      </div>
-      <p id="status" role="status" aria-live="polite" hidden></p>
-      <section id="result" class="result" aria-labelledby="result-heading" hidden>
-        <div class="result-preview"><img id="result-image" alt="Processed photo preview"></div>
-        <div class="result-content"><span class="tiny-label">YOUR PREPARED PHOTO</span><h3 id="result-heading">Ready for the next step.</h3><p id="result-summary"></p><div id="result-checks" class="result-checks"></div><p id="result-warning" hidden></p><a id="download" class="button primary" download>Download photo <span aria-hidden="true">↓</span></a><p class="field-help">Check the preview before submitting your application.</p></div>
-      </section>
-    </section>
-
-    <section id="how-it-works" class="how-section wrap"><div class="section-intro"><span class="tiny-label">FROM “FILE TOO LARGE” TO DONE</span><h2>Three steps. Zero headaches.</h2></div><div class="how-grid"><article><span class="how-number">01</span><h3>Pick your photo</h3><p>A portrait, a signature, or a scan. Choose a JPG, PNG, or WebP from your device.</p></article><article><span class="how-number">02</span><h3>Set the requirements</h3><p>Enter the size and dimensions your form asks for. We’ll do the resizing and compression.</p></article><article><span class="how-number">03</span><h3>Download and carry on</h3><p>Check your preview, save the new file, and get back to what you were doing.</p></article></div></section>
-    <section id="questions" class="faq-section wrap"><div><span class="tiny-label">GOOD TO KNOW</span><h2>A little clarity.</h2><p>Small answers to common questions.</p></div><div class="faq-list"><details><summary>Is it really free?</summary><p>Yes. Every feature here is free to use, with no account, subscription, or watermark.</p></details><details><summary>Where do my photos go?</summary><p>They stay in your browser. The tool doesn’t upload or store your photos on a server. Download any result you want to keep before closing or refreshing the page.</p></details><details><summary>Will it always reach my target size?</summary><p>Some limits are too small for the dimensions or format you choose. We’ll clearly show whether the result fits. You can allow smaller dimensions, choose JPG or WebP, or increase the limit. Here, 1 KB means 1,000 bytes.</p></details><details><summary>Can I use this for an application form?</summary><p>Yes. Follow the form’s own format, dimension, and size requirements. This tool can resize and compress a photo; it doesn’t check official photo rules, crop backgrounds, or guarantee acceptance.</p></details></div></section>
+  <main class="hero wrap">
+    <p class="eyebrow">OUR NEW NAME, SAME FREE PHOTO TOOL</p>
+    <h1>I Love<br><em>Free Compressor.</em></h1>
+    <p>Our free image compressor and photo resizer has moved. You’re being redirected to the new website.</p>
+    <a class="button primary" href="https://kathirvelm387.github.io/i-love-free-compressor/">Open I Love Free Compressor →</a>
   </main>
-  <footer class="wrap"><a class="brand" href="./"><span class="brand-icon" aria-hidden="true">↥</span>Free&nbsp;<span>Comprizer</span></a><p>A little tool for getting on with life.</p><span>Made to be useful. Free to use.</span></footer>
 </body>
 </html>
